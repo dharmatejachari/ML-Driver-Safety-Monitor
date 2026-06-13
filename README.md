@@ -66,7 +66,7 @@ Driver-Safety-Monitor/
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/yourusername/Driver-Safety-Monitor.git
+git clone https://github.com/dharmatejachari/Driver-Safety-Monitor.git
 cd Driver-Safety-Monitor
 ```
 
