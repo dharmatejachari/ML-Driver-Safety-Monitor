@@ -1,0 +1,7 @@
+opencv-python
+mediapipe==0.10.33
+ultralytics
+python-telegram-bot==20.7
+python-dotenv
+numpy
+requests

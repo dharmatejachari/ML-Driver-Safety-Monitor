@@ -1,0 +1,18 @@
+# environment variables — never upload
+.env
+
+# model files — too large, auto download
+*.tflite
+*.task
+*.pt
+
+# snapshots
+alert_snapshot.jpg
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# VS Code
+.vscode/
