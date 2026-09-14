@@ -323,17 +323,17 @@ while True:
         # ====================================================
 
         features = np.array([[
-            EAR,
-            eye_closure_duration,
-            yaw,
-            pitch,
-            roll,
-            abs_yaw,
-            abs_pitch,
-            head_movement,
-            phone_detected,
-            phone_confidence
-        ]])
+    EAR,
+    eye_closure_duration,
+    yaw,
+    pitch,
+    roll,
+    abs_yaw,
+    abs_pitch,
+    head_movement,
+    phone_detected,
+    phone_confidence
+    ]])
 
         # ====================================================
         # ML PREDICTION

@@ -1,158 +1,313 @@
-# 🚗 AI-Based Driver Safety Monitoring System
+# ML Driver Safety Monitor
 
-A real-time driver monitoring system using computer vision and deep learning
-to detect drowsiness, distraction, and phone usage — with instant alerts
-sent to the vehicle owner via Telegram.
+## Machine Learning Based Driver Behavior Analysis and Safety Monitoring System
 
----
+An AI-based driver safety monitoring system that combines computer vision, deep learning, feature engineering, and machine learning to analyze driver behavior in real time.
 
-## 📌 Project Overview
+The system extracts meaningful driver-related features from camera input and uses a machine learning model to classify the driver's state as:
 
-Road accidents caused by driver negligence are a major problem in transport
-businesses. This system continuously monitors the driver using a camera and
-automatically alerts the vehicle owner when dangerous behavior is detected.
-
----
-
-## ✨ Features
-
-- 😴 **Drowsiness Detection** — Detects if driver's eyes are closed for more
-  than 2 seconds using Eye Aspect Ratio (EAR) algorithm
-- 👀 **Distraction Detection** — Detects if driver is looking left, right,
-  or down instead of the road using 3D head pose estimation
-- 📱 **Phone Detection** — Detects if driver is using a mobile phone while
-  driving using YOLOv8 object detection
-- 📲 **Telegram Alerts** — Instantly notifies vehicle owner with alert
-  message and photo snapshot of the driver
-- ⏱️ **Alert Cooldown** — Prevents alert spam with 30 second cooldown per
-  alert type
+- Alert
+- Drowsy
+- Distracted
+- Phone Usage
 
 ---
 
-## 🛠️ Technologies Used
+## Project Objective
 
-| Technology | Purpose |
-|------------|---------|
-| Python | Core programming language |
-| OpenCV | Video capture and frame processing |
-| MediaPipe | Face landmark detection (468 points) |
-| YOLOv8 | Real-time object detection |
-| Telegram Bot API | Owner alert notifications |
-| NumPy | Mathematical computations |
+Driver distraction, drowsiness, and mobile phone usage are major causes of road accidents.
 
----
+The objective of this project is to develop an intelligent driver monitoring system that:
 
-## 📁 Project Structure
-
-Driver-Safety-Monitor/
-
-├── main.py            # Main system — runs all detectors together
-
-├── drowsiness.py      # Drowsiness detection module
-
-├── head_pose.py       # Head pose / distraction detection module
-
-├── object_detect.py   # Phone detection module
-
-├── requirements.txt   # Python dependencies
-
-├── .env               # API keys (not uploaded — create locally)
-
-└── README.md          # Project documentation
+- Monitors the driver through a camera
+- Extracts facial and head-pose features
+- Detects mobile phone usage
+- Processes extracted features
+- Classifies driver behavior using machine learning
+- Provides a foundation for real-time safety alerts
 
 ---
 
-## ⚙️ Installation & Setup
+## System Architecture
 
-**1. Clone the repository**
-```bash
-git clone https://github.com/dharmatejachari/Driver-Safety-Monitor.git
-cd Driver-Safety-Monitor
-```
+Camera Input
+        ↓
+OpenCV
+        ↓
+MediaPipe + YOLOv8
+        ↓
+Feature Extraction
+        ↓
+Data Preprocessing
+        ↓
+Feature Engineering
+        ↓
+Machine Learning Models
+        ↓
+Driver Behavior Classification
+        ↓
+Safety Monitoring / Alerts
 
-**2. Install dependencies**
-```bash
+---
+
+## Technologies Used
+
+### Computer Vision
+
+- OpenCV
+- MediaPipe
+
+### Deep Learning
+
+- YOLOv8
+
+### Machine Learning
+
+- Scikit-learn
+- Logistic Regression
+- Random Forest
+- Support Vector Machine (SVM)
+
+### Data Science
+
+- Python
+- NumPy
+- Pandas
+- Matplotlib
+- Seaborn
+
+### Other Technologies
+
+- Joblib
+- Telegram Bot API
+- Git & GitHub
+
+---
+
+## Features
+
+### 1. Drowsiness Detection
+
+Eye Aspect Ratio (EAR) is extracted from facial landmarks.
+
+The system also calculates eye closure duration to identify prolonged eye closure.
+
+### 2. Driver Distraction Detection
+
+Head-pose information is extracted using facial transformation matrices.
+
+The system uses:
+
+- Yaw
+- Pitch
+- Roll
+- Absolute yaw
+- Absolute pitch
+- Head movement
+
+to represent driver head behavior.
+
+### 3. Phone Usage Detection
+
+YOLOv8 is used to detect mobile phones in the camera frame.
+
+The following information is extracted:
+
+- Phone detected
+- Phone confidence
+
+### 4. Machine Learning Classification
+
+The extracted features are provided to supervised machine learning models to classify driver behavior.
+
+Classes:
+
+- Alert
+- Drowsy
+- Distracted
+- Phone Usage
+
+---
+
+## Dataset
+
+A custom driver behavior dataset was created using real-time feature extraction.
+
+The final dataset contains:
+
+- 101 observations
+- 10 input features
+- 4 driver behavior classes
+
+### Features
+
+1. EAR
+2. Eye Closure Duration
+3. Yaw
+4. Pitch
+5. Roll
+6. Absolute Yaw
+7. Absolute Pitch
+8. Head Movement
+9. Phone Detection
+10. Phone Confidence
+
+---
+
+## Machine Learning Models
+
+The following models were evaluated:
+
+- Logistic Regression
+- Random Forest
+- SVM
+- Tuned SVM
+
+The models were evaluated using:
+
+- Accuracy
+- Precision
+- Recall
+- F1-score
+- Confusion Matrix
+
+---
+
+## Model Performance
+
+| Model | Accuracy | Precision | Recall | F1 Score |
+|---|---:|---:|---:|---:|
+| Logistic Regression | 80.95% | 82.14% | 80.95% | 81.16% |
+| Random Forest | 76.19% | 81.90% | 76.19% | 75.23% |
+| SVM | 71.43% | 73.61% | 71.43% | 70.88% |
+| Tuned SVM | 80.95% | 83.33% | 80.95% | 81.09% |
+
+### Best Model
+
+**Logistic Regression**
+
+Test Accuracy: **80.95%**
+
+F1 Score: **81.16%**
+
+The Logistic Regression model was selected as the final model based on the highest test F1-score.
+
+---
+
+## Data Analysis
+
+Exploratory Data Analysis was performed using:
+
+- Pandas
+- NumPy
+- Matplotlib
+- Seaborn
+
+The analysis includes:
+
+- Driver state distribution
+- EAR analysis
+- Yaw analysis
+- Pitch analysis
+- Feature correlation analysis
+- Confusion matrix
+- Model comparison
+
+Generated analysis files are available in:
+
+```text
+analysis/
+Project Structure
+ML-Driver-Safety-Monitor/
+│
+├── analysis/
+│   ├── eda.py
+│   ├── create_dashboard_data.py
+│   ├── model_comparison.csv
+│   ├── tuned_svm_metrics.csv
+│   ├── driver_safety_dashboard.csv
+│   └── plots/
+│
+├── data/
+│   └── driver_behavior.csv
+│
+├── models/
+│   └── driver_behavior_model.pkl
+│
+├── collect_data.py
+├── train_model.py
+├── ml_monitor.py
+├── main.py
+├── drowsiness.py
+├── head_pose.py
+├── object_detect.py
+├── requirements.txt
+└── README.md
+How to Run
+Install dependencies
 pip install -r requirements.txt
-```
+Collect driver behavior data
+python collect_data.py
+Train machine learning models
+python train_model.py
+Run the ML driver monitor
+python ml_monitor.py
+Machine Learning Workflow
 
-**3. Create your `.env` file**
+The project follows the following Data Science workflow:
 
-BOT_TOKEN=your_telegram_bot_token
-CHAT_ID=your_telegram_chat_id
+Data Collection
+      ↓
+Data Cleaning
+      ↓
+Feature Extraction
+      ↓
+Feature Engineering
+      ↓
+Data Preprocessing
+      ↓
+Train-Test Split
+      ↓
+Model Training
+      ↓
+Model Evaluation
+      ↓
+Hyperparameter Tuning
+      ↓
+Best Model Selection
+      ↓
+Real-Time Prediction
+Internship Relevance
 
-**4. Run the system**
-```bash
-python main.py
-```
+This project demonstrates practical application of Machine Learning and Data Science concepts including:
 
-> On first run, model files are downloaded automatically (~50MB total)
+NumPy
+Pandas
+Data preprocessing
+Feature engineering
+Supervised learning
+Scikit-learn
+Model evaluation
+Model selection
+Ensemble learning
+Hyperparameter tuning
+Exploratory Data Analysis
+Data visualization
 
----
+Computer vision and deep learning techniques are used for feature extraction, while machine learning is used for driver behavior classification.
 
-## 📲 How to set up Telegram alerts
+Future Scope
 
-1. Open Telegram and search `@BotFather`
-2. Send `/newbot` and follow the steps
-3. Copy the token and paste in `.env` as `BOT_TOKEN`
-4. Message your bot once, then visit:
-   `https://api.telegram.org/botYOUR_TOKEN/getUpdates`
-5. Copy the `chat.id` value and paste in `.env` as `CHAT_ID`
+Future improvements can include:
 
----
+Larger and more diverse datasets
+Improved real-time prediction stability
+More advanced feature engineering
+Deep learning based driver behavior classification
+Cloud-based monitoring
+Mobile application integration
+Advanced safety analytics dashboards
+Deployment using Flask or other web frameworks
+Disclaimer
 
-## 🚨 Alert Examples
-
-When an alert fires, the owner receives:
-
-🚨 DROWSY ALERT!
-
-Driver eyes closed for 3.2 seconds
-
-Time: 14:32:08
-👀 DISTRACTION ALERT!
-
-Driver Looking LEFT for 2.5 seconds
-
-Time: 14:35:21
-📱 PHONE ALERT!
-
-Driver using phone while driving!
-
-Time: 14:40:05
-
-Followed immediately by a photo snapshot of the driver.
-
----
-
-## 💻 System Requirements
-
-- Python 3.11 or higher
-- Webcam (built-in or external)
-- Internet connection (for Telegram alerts)
-- Minimum 4GB RAM recommended
-- No GPU required — runs on CPU only
-
----
-
-## 🔮 Future Improvements
-
-- [ ] Alcohol detection using MQ-3 sensor + Arduino
-- [ ] Emergency SOS button for driver
-- [ ] GPS tracking with real coordinates (NEO-6M module)
-- [ ] Raspberry Pi deployment for permanent in-vehicle installation
-- [ ] Headphone/earphone detection with custom trained model
-
----
-
-## 👨‍💻 Developer
-
-Built as part of a transport business safety initiative to reduce road
-accidents caused by driver negligence.
-
----
-
-## ⚠️ Disclaimer
-
-This system is a prototype built for educational and demonstration purposes.
-For production deployment in vehicles, additional hardware, testing, and
-safety certifications are recommended.
+This project is an educational prototype developed for learning and demonstration purposes. It should not be considered a certified automotive safety system.
