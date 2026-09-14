@@ -23,7 +23,9 @@ if not os.path.exists(MODEL_PATH):
         MODEL_PATH
     )
 
-base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
+base_options = python.BaseOptions(
+    model_asset_path=MODEL_PATH
+)
 
 options = vision.FaceLandmarkerOptions(
     base_options=base_options,
@@ -45,6 +47,7 @@ RIGHT_EYE = [33, 160, 158, 133, 153, 144]
 
 EAR_THRESHOLD = 0.25
 
+# Collect one sample every 5 frames
 SAMPLE_EVERY = 5
 
 CSV_PATH = "data/driver_behavior.csv"
@@ -115,26 +118,37 @@ columns = [
     "driver_state"
 ]
 
+# Check whether dataset already exists
 file_exists = os.path.exists(CSV_PATH)
 
-# IMPORTANT:
-# Existing CSV has old columns, so create a new dataset.
-if file_exists:
-    old_file = CSV_PATH
-    backup_file = "data/driver_behavior_old.csv"
+# ============================================================
+# APPEND MODE
+# ============================================================
 
-    if not os.path.exists(backup_file):
-        os.rename(old_file, backup_file)
-        print("Old dataset backed up to:", backup_file)
-
-csv_file = open(CSV_PATH, "a", newline="")
+# "a" means APPEND.
+# Existing data will NOT be deleted.
+csv_file = open(
+    CSV_PATH,
+    "a",
+    newline=""
+)
 
 writer = csv.DictWriter(
     csv_file,
     fieldnames=columns
 )
 
-writer.writeheader()
+# Write the header ONLY if the file is new or empty
+if (
+    not file_exists
+    or os.path.getsize(CSV_PATH) == 0
+):
+    writer.writeheader()
+    print("Created new dataset:", CSV_PATH)
+
+else:
+    print("Existing dataset found.")
+    print("New samples will be APPENDED to the existing dataset.")
 
 # ============================================================
 # CAMERA
@@ -145,7 +159,9 @@ cap = cv2.VideoCapture(0)
 if not cap.isOpened():
 
     print("ERROR: Camera could not be opened.")
+
     csv_file.close()
+
     exit()
 
 print()
@@ -158,8 +174,13 @@ print("3 = DISTRACTED")
 print("4 = PHONE USAGE")
 print("Q = QUIT")
 print()
-print("Collect approximately 100 samples per class.")
+print("Existing data will be preserved.")
+print("New samples will be added to the dataset.")
 print("==============================================")
+
+# ============================================================
+# INITIAL STATE
+# ============================================================
 
 current_state = "Alert"
 
@@ -204,8 +225,14 @@ while True:
         for box in result.boxes:
 
             class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
-            label = yolo.names[class_id].lower()
+
+            confidence = float(
+                box.conf[0]
+            )
+
+            label = yolo.names[
+                class_id
+            ].lower()
 
             if (
                 class_id == 67
@@ -233,6 +260,16 @@ while True:
                     2
                 )
 
+                cv2.putText(
+                    frame,
+                    f"PHONE {confidence:.0%}",
+                    (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 255),
+                    2
+                )
+
     # ========================================================
     # FACE LANDMARKS
     # ========================================================
@@ -247,16 +284,30 @@ while True:
         data=rgb
     )
 
-    result = landmarker.detect(mp_img)
+    result = landmarker.detect(
+        mp_img
+    )
+
+    # ========================================================
+    # DEFAULT FEATURES
+    # ========================================================
 
     EAR = 0.0
+
     eye_closure_duration = 0.0
 
     yaw = 0.0
     pitch = 0.0
     roll = 0.0
 
+    abs_yaw = 0.0
+    abs_pitch = 0.0
+
     head_movement = 0.0
+
+    # ========================================================
+    # FACE DETECTED
+    # ========================================================
 
     if result.face_landmarks:
 
@@ -280,7 +331,9 @@ while True:
             h
         )
 
-        EAR = (left_ear + right_ear) / 2.0
+        EAR = (
+            left_ear + right_ear
+        ) / 2.0
 
         # ====================================================
         # EYE CLOSURE
@@ -289,15 +342,18 @@ while True:
         if EAR < EAR_THRESHOLD:
 
             if eyes_closed_since is None:
+
                 eyes_closed_since = time.time()
 
             eye_closure_duration = (
-                time.time() - eyes_closed_since
+                time.time()
+                - eyes_closed_since
             )
 
         else:
 
             eyes_closed_since = None
+
             eye_closure_duration = 0.0
 
         # ====================================================
@@ -307,26 +363,42 @@ while True:
         if result.facial_transformation_matrixes:
 
             matrix = (
-                result.facial_transformation_matrixes[0].data
+                result
+                .facial_transformation_matrixes[0]
+                .data
             )
 
-            yaw, pitch, roll = rotation_matrix_to_angles(
-                matrix
+            yaw, pitch, roll = (
+                rotation_matrix_to_angles(
+                    matrix
+                )
             )
 
-        # ====================================================
-        # HEAD MOVEMENT
-        # ====================================================
+            # =================================================
+            # ABSOLUTE ANGLES
+            # =================================================
 
-        if previous_yaw is not None:
+            abs_yaw = abs(yaw)
 
-            head_movement = np.sqrt(
-                (yaw - previous_yaw) ** 2 +
-                (pitch - previous_pitch) ** 2
-            )
+            abs_pitch = abs(pitch)
 
-        previous_yaw = yaw
-        previous_pitch = pitch
+            # =================================================
+            # HEAD MOVEMENT
+            # =================================================
+
+            if (
+                previous_yaw is not None
+                and previous_pitch is not None
+            ):
+
+                head_movement = np.sqrt(
+                    (yaw - previous_yaw) ** 2
+                    +
+                    (pitch - previous_pitch) ** 2
+                )
+
+            previous_yaw = yaw
+            previous_pitch = pitch
 
     # ========================================================
     # SAVE DATA
@@ -346,7 +418,10 @@ while True:
                 round(EAR, 4),
 
             "eye_closure_duration":
-                round(eye_closure_duration, 3),
+                round(
+                    eye_closure_duration,
+                    3
+                ),
 
             "yaw":
                 round(yaw, 3),
@@ -358,10 +433,10 @@ while True:
                 round(roll, 3),
 
             "abs_yaw":
-                round(abs(yaw), 3),
+                round(abs_yaw, 3),
 
             "abs_pitch":
-                round(abs(pitch), 3),
+                round(abs_pitch, 3),
 
             "head_movement":
                 round(head_movement, 3),
@@ -370,12 +445,16 @@ while True:
                 phone_detected,
 
             "phone_confidence":
-                round(phone_confidence, 3),
+                round(
+                    phone_confidence,
+                    3
+                ),
 
             "driver_state":
                 current_state
         })
 
+        # Immediately save the new row
         csv_file.flush()
 
         sample_count += 1
@@ -424,7 +503,7 @@ while True:
 
     cv2.putText(
         frame,
-        f"Samples: {sample_count}",
+        f"New Samples: {sample_count}",
         (10, 110),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.55,
@@ -446,24 +525,31 @@ while True:
     if key == ord("1"):
 
         current_state = "Alert"
+
         print("State -> ALERT")
 
     elif key == ord("2"):
 
         current_state = "Drowsy"
+
         print("State -> DROWSY")
 
     elif key == ord("3"):
 
         current_state = "Distracted"
+
         print("State -> DISTRACTED")
 
     elif key == ord("4"):
 
         current_state = "Phone_Usage"
+
         print("State -> PHONE USAGE")
 
-    elif key == ord("q") or key == ord("Q"):
+    elif (
+        key == ord("q")
+        or key == ord("Q")
+    ):
 
         break
 
@@ -473,12 +559,15 @@ while True:
 # ============================================================
 
 cap.release()
+
 csv_file.close()
+
 cv2.destroyAllWindows()
 
 print()
 print("==============================================")
 print("DATA COLLECTION FINISHED")
+print("==============================================")
 print("Dataset saved to:", CSV_PATH)
-print("Total samples:", sample_count)
+print("New samples collected:", sample_count)
 print("==============================================")

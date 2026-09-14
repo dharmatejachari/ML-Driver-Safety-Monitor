@@ -8,6 +8,7 @@ import time
 import joblib
 from ultralytics import YOLO
 
+
 # ============================================================
 # LOAD TRAINED ML MODEL
 # ============================================================
@@ -22,6 +23,15 @@ if not os.path.exists(MODEL_PATH):
 model = joblib.load(MODEL_PATH)
 
 print("ML model loaded successfully.")
+
+# Check expected number of features
+if hasattr(model, "n_features_in_"):
+    print(
+        "Model expects",
+        model.n_features_in_,
+        "features."
+    )
+
 
 # ============================================================
 # MEDIAPIPE SETUP
@@ -43,63 +53,112 @@ options = vision.FaceLandmarkerOptions(
     output_facial_transformation_matrixes=True
 )
 
-landmarker = vision.FaceLandmarker.create_from_options(options)
+landmarker = vision.FaceLandmarker.create_from_options(
+    options
+)
+
 
 # ============================================================
-# YOLO
+# YOLO SETUP
 # ============================================================
+
+print("Loading YOLO...")
 
 yolo = YOLO("yolov8s.pt")
+
 
 # ============================================================
 # CONSTANTS
 # ============================================================
 
-LEFT_EYE = [362, 385, 387, 263, 373, 380]
-RIGHT_EYE = [33, 160, 158, 133, 153, 144]
+LEFT_EYE = [
+    362, 385, 387,
+    263, 373, 380
+]
+
+RIGHT_EYE = [
+    33, 160, 158,
+    133, 153, 144
+]
 
 EAR_THRESHOLD = 0.25
+
 
 # ============================================================
 # FUNCTIONS
 # ============================================================
 
-def eye_aspect_ratio(landmarks, eye_points, w, h):
+def eye_aspect_ratio(
+    landmarks,
+    eye_points,
+    w,
+    h
+):
 
     pts = [
-        (landmarks[i].x * w, landmarks[i].y * h)
+        (
+            landmarks[i].x * w,
+            landmarks[i].y * h
+        )
         for i in eye_points
     ]
 
     v1 = np.linalg.norm(
-        np.array(pts[1]) - np.array(pts[5])
+        np.array(pts[1])
+        -
+        np.array(pts[5])
     )
 
     v2 = np.linalg.norm(
-        np.array(pts[2]) - np.array(pts[4])
+        np.array(pts[2])
+        -
+        np.array(pts[4])
     )
 
-    hz = np.linalg.norm(
-        np.array(pts[0]) - np.array(pts[3])
+    horizontal = np.linalg.norm(
+        np.array(pts[0])
+        -
+        np.array(pts[3])
     )
 
-    return (v1 + v2) / (2.0 * hz)
+    if horizontal == 0:
+        return 0.0
+
+    return (
+        v1 + v2
+    ) / (
+        2.0 * horizontal
+    )
 
 
 def rotation_matrix_to_angles(matrix):
 
-    r = np.array(matrix).reshape(4, 4)[:3, :3]
+    r = np.array(
+        matrix
+    ).reshape(4, 4)[:3, :3]
 
     pitch = np.degrees(
-        np.arcsin(-r[1, 2])
+        np.arcsin(
+            np.clip(
+                -r[1, 2],
+                -1.0,
+                1.0
+            )
+        )
     )
 
     yaw = np.degrees(
-        np.arctan2(r[0, 2], r[2, 2])
+        np.arctan2(
+            r[0, 2],
+            r[2, 2]
+        )
     )
 
     roll = np.degrees(
-        np.arctan2(r[1, 0], r[1, 1])
+        np.arctan2(
+            r[1, 0],
+            r[1, 1]
+        )
     )
 
     return yaw, pitch, roll
@@ -116,11 +175,16 @@ if not cap.isOpened():
     print("ERROR: Camera could not be opened.")
     exit()
 
+
+print()
 print("==============================================")
-print(" ML DRIVER SAFETY MONITOR")
+print("       ML DRIVER SAFETY MONITOR")
 print("==============================================")
+print("Model: Random Forest")
+print("Features: 10")
 print("Press Q to quit.")
 print("==============================================")
+
 
 # ============================================================
 # TRACKING VARIABLES
@@ -132,6 +196,9 @@ previous_yaw = None
 previous_pitch = None
 
 prediction_history = []
+
+prediction_confidence = 0.0
+
 
 # ============================================================
 # MAIN LOOP
@@ -146,11 +213,13 @@ while True:
 
     h, w = frame.shape[:2]
 
+
     # ========================================================
-    # PHONE DETECTION
+    # PHONE DETECTION USING YOLO
     # ========================================================
 
     phone_detected = 0
+
     phone_confidence = 0.0
 
     yolo_results = yolo(
@@ -159,14 +228,23 @@ while True:
         conf=0.30
     )
 
+
     for result in yolo_results:
 
         for box in result.boxes:
 
-            class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
+            class_id = int(
+                box.cls[0]
+            )
 
-            label = yolo.names[class_id].lower()
+            confidence = float(
+                box.conf[0]
+            )
+
+            label = yolo.names[
+                class_id
+            ].lower()
+
 
             if (
                 class_id == 67
@@ -181,10 +259,12 @@ while True:
                     confidence
                 )
 
+
                 x1, y1, x2, y2 = map(
                     int,
                     box.xyxy[0]
                 )
+
 
                 cv2.rectangle(
                     frame,
@@ -194,18 +274,20 @@ while True:
                     2
                 )
 
+
                 cv2.putText(
                     frame,
                     f"PHONE {confidence:.0%}",
-                    (x1, y1 - 10),
+                    (x1, max(20, y1 - 10)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     (0, 0, 255),
                     2
                 )
 
+
     # ========================================================
-    # FACE LANDMARKS
+    # MEDIAPIPE FACE LANDMARKS
     # ========================================================
 
     rgb = cv2.cvtColor(
@@ -213,16 +295,26 @@ while True:
         cv2.COLOR_BGR2RGB
     )
 
+
     mp_img = mp.Image(
         image_format=mp.ImageFormat.SRGB,
         data=rgb
     )
 
-    result = landmarker.detect(mp_img)
+
+    result = landmarker.detect(
+        mp_img
+    )
+
+
+    # ========================================================
+    # DEFAULT VALUES
+    # ========================================================
 
     driver_state = "No Face"
 
     EAR = 0.0
+
     eye_closure_duration = 0.0
 
     yaw = 0.0
@@ -236,6 +328,7 @@ while True:
 
     prediction_confidence = 0.0
 
+
     # ========================================================
     # FACE DETECTED
     # ========================================================
@@ -243,6 +336,7 @@ while True:
     if result.face_landmarks:
 
         landmarks = result.face_landmarks[0]
+
 
         # ====================================================
         # EAR
@@ -255,6 +349,7 @@ while True:
             h
         )
 
+
         right_ear = eye_aspect_ratio(
             landmarks,
             RIGHT_EYE,
@@ -262,7 +357,13 @@ while True:
             h
         )
 
-        EAR = (left_ear + right_ear) / 2.0
+
+        EAR = (
+            left_ear
+            +
+            right_ear
+        ) / 2.0
+
 
         # ====================================================
         # EYE CLOSURE DURATION
@@ -271,16 +372,22 @@ while True:
         if EAR < EAR_THRESHOLD:
 
             if eyes_closed_since is None:
+
                 eyes_closed_since = time.time()
 
+
             eye_closure_duration = (
-                time.time() - eyes_closed_since
+                time.time()
+                -
+                eyes_closed_since
             )
 
         else:
 
             eyes_closed_since = None
+
             eye_closure_duration = 0.0
+
 
         # ====================================================
         # HEAD POSE
@@ -289,16 +396,27 @@ while True:
         if result.facial_transformation_matrixes:
 
             matrix = (
-                result.facial_transformation_matrixes[0].data
+                result
+                .facial_transformation_matrixes[0]
+                .data
             )
 
-            yaw, pitch, roll = rotation_matrix_to_angles(
-                matrix
+
+            yaw, pitch, roll = (
+                rotation_matrix_to_angles(
+                    matrix
+                )
             )
 
-            # Absolute head angles
+
+            # =================================================
+            # ABSOLUTE HEAD ANGLES
+            # =================================================
+
             abs_yaw = abs(yaw)
+
             abs_pitch = abs(pitch)
+
 
             # =================================================
             # HEAD MOVEMENT
@@ -306,154 +424,235 @@ while True:
 
             if (
                 previous_yaw is not None
-                and previous_pitch is not None
+                and
+                previous_pitch is not None
             ):
 
                 head_movement = np.sqrt(
-                    (yaw - previous_yaw) ** 2
+                    (
+                        yaw
+                        -
+                        previous_yaw
+                    ) ** 2
                     +
-                    (pitch - previous_pitch) ** 2
+                    (
+                        pitch
+                        -
+                        previous_pitch
+                    ) ** 2
                 )
 
+
             previous_yaw = yaw
+
             previous_pitch = pitch
 
+
         # ====================================================
-        # ML FEATURES
+        # 10 ML FEATURES
         # ====================================================
 
         features = np.array([[
-    EAR,
-    eye_closure_duration,
-    yaw,
-    pitch,
-    roll,
-    abs_yaw,
-    abs_pitch,
-    head_movement,
-    phone_detected,
-    phone_confidence
-    ]])
+            EAR,
+            eye_closure_duration,
+            yaw,
+            pitch,
+            roll,
+            abs_yaw,
+            abs_pitch,
+            head_movement,
+            phone_detected,
+            phone_confidence
+        ]])
+
 
         # ====================================================
         # ML PREDICTION
         # ====================================================
 
-        prediction = model.predict(features)[0]
+        prediction = model.predict(
+            features
+        )[0]
 
-        driver_state = str(prediction)
+        driver_state = str(
+            prediction
+        )
+
 
         # ====================================================
         # PREDICTION CONFIDENCE
         # ====================================================
 
-        if hasattr(model, "predict_proba"):
+        if hasattr(
+            model,
+            "predict_proba"
+        ):
 
-            probabilities = model.predict_proba(features)
-
-            prediction_confidence = float(
-                np.max(probabilities)
+            probabilities = (
+                model.predict_proba(
+                    features
+                )
             )
 
+            prediction_confidence = float(
+                np.max(
+                    probabilities
+                )
+            )
+
+
         # ====================================================
-        # SMOOTH PREDICTION
+        # PREDICTION SMOOTHING
         # ====================================================
 
-        prediction_history.append(driver_state)
+        prediction_history.append(
+            driver_state
+        )
 
-        if len(prediction_history) > 5:
-            prediction_history.pop(0)
+
+        if len(
+            prediction_history
+        ) > 5:
+
+            prediction_history.pop(
+                0
+            )
+
 
         if prediction_history:
 
             driver_state = max(
-                set(prediction_history),
+                set(
+                    prediction_history
+                ),
                 key=prediction_history.count
             )
 
+
     else:
 
-        # Reset face-dependent tracking
+        # Reset face tracking
         eyes_closed_since = None
+
         previous_yaw = None
+
         previous_pitch = None
 
+        prediction_history.clear()
+
+
     # ========================================================
-    # DISPLAY
+    # DISPLAY INFORMATION PANEL
     # ========================================================
 
     cv2.rectangle(
         frame,
         (0, 0),
-        (w, 165),
+        (w, 180),
         (0, 0, 0),
         -1
     )
 
+
+    # ========================================================
+    # DRIVER STATE
+    # ========================================================
+
     cv2.putText(
         frame,
         f"ML DRIVER STATE: {driver_state}",
-        (10, 32),
+        (10, 30),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.75,
+        0.70,
         (0, 255, 0),
         2
     )
 
-    cv2.putText(
-        frame,
-        f"ML Confidence: {prediction_confidence:.0%}",
-        (10, 60),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (255, 255, 255),
-        2
-    )
+
+    # ========================================================
+    # ML CONFIDENCE
+    # ========================================================
 
     cv2.putText(
         frame,
-        f"EAR: {EAR:.2f}  Eye Closure: {eye_closure_duration:.1f}s",
-        (10, 88),
+        f"ML Confidence: {prediction_confidence:.0%}",
+        (10, 57),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
         (255, 255, 255),
         2
     )
+
+
+    # ========================================================
+    # EYE INFORMATION
+    # ========================================================
+
+    cv2.putText(
+        frame,
+        f"EAR: {EAR:.2f}  Closure: {eye_closure_duration:.1f}s",
+        (10, 84),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.50,
+        (255, 255, 255),
+        2
+    )
+
+
+    # ========================================================
+    # HEAD POSE
+    # ========================================================
 
     cv2.putText(
         frame,
         f"Yaw: {yaw:.1f}  Pitch: {pitch:.1f}  Roll: {roll:.1f}",
-        (10, 114),
+        (10, 110),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
+        0.50,
         (255, 255, 255),
         2
     )
+
+
+    # ========================================================
+    # HEAD MOVEMENT
+    # ========================================================
 
     cv2.putText(
         frame,
         f"Head Movement: {head_movement:.2f}",
-        (10, 140),
+        (10, 137),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
+        0.50,
         (255, 255, 255),
         2
     )
 
+
+    # ========================================================
+    # PHONE INFORMATION
+    # ========================================================
+
     cv2.putText(
         frame,
         f"Phone: {phone_detected}  Confidence: {phone_confidence:.2f}",
-        (10, 160),
+        (10, 164),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
+        0.50,
         (255, 255, 255),
         2
     )
+
+
+    # ========================================================
+    # SHOW WINDOW
+    # ========================================================
 
     cv2.imshow(
         "ML Driver Safety Monitor",
         frame
     )
+
 
     # ========================================================
     # QUIT
@@ -461,7 +660,12 @@ while True:
 
     key = cv2.waitKey(1) & 0xFF
 
-    if key == ord("q") or key == ord("Q"):
+    if (
+        key == ord("q")
+        or
+        key == ord("Q")
+    ):
+
         break
 
 
@@ -470,6 +674,10 @@ while True:
 # ============================================================
 
 cap.release()
+
 cv2.destroyAllWindows()
 
+print()
+print("==============================================")
 print("ML Driver Monitor stopped.")
+print("==============================================")
