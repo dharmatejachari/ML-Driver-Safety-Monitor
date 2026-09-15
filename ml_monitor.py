@@ -6,7 +6,20 @@ import numpy as np
 import os
 import time
 import joblib
+import requests
+import threading
+from dotenv import load_dotenv
 from ultralytics import YOLO
+
+
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 
 # ============================================================
@@ -16,6 +29,7 @@ from ultralytics import YOLO
 MODEL_PATH = "models/driver_behavior_model.pkl"
 
 if not os.path.exists(MODEL_PATH):
+
     print("ERROR: Trained model not found.")
     print("Run: python train_model.py")
     exit()
@@ -24,13 +38,31 @@ model = joblib.load(MODEL_PATH)
 
 print("ML model loaded successfully.")
 
-# Check expected number of features
 if hasattr(model, "n_features_in_"):
+
     print(
         "Model expects",
         model.n_features_in_,
         "features."
     )
+
+
+# ============================================================
+# TELEGRAM SETUP
+# ============================================================
+
+if BOT_TOKEN and CHAT_ID:
+
+    TELEGRAM_ENABLED = True
+
+    print("Telegram alerts: ENABLED")
+
+else:
+
+    TELEGRAM_ENABLED = False
+
+    print("Telegram alerts: DISABLED")
+    print("Check BOT_TOKEN and CHAT_ID in your .env file.")
 
 
 # ============================================================
@@ -40,18 +72,22 @@ if hasattr(model, "n_features_in_"):
 MODEL_FILE = "face_landmarker.task"
 
 if not os.path.exists(MODEL_FILE):
+
     print("ERROR: face_landmarker.task not found.")
     exit()
+
 
 base_options = python.BaseOptions(
     model_asset_path=MODEL_FILE
 )
+
 
 options = vision.FaceLandmarkerOptions(
     base_options=base_options,
     num_faces=1,
     output_facial_transformation_matrixes=True
 )
+
 
 landmarker = vision.FaceLandmarker.create_from_options(
     options
@@ -82,6 +118,12 @@ RIGHT_EYE = [
 ]
 
 EAR_THRESHOLD = 0.25
+
+# Unsafe state must persist for this many seconds
+UNSAFE_DURATION = 2.0
+
+# Minimum time between Telegram alerts
+ALERT_COOLDOWN = 30.0
 
 
 # ============================================================
@@ -122,6 +164,7 @@ def eye_aspect_ratio(
     )
 
     if horizontal == 0:
+
         return 0.0
 
     return (
@@ -165,6 +208,91 @@ def rotation_matrix_to_angles(matrix):
 
 
 # ============================================================
+# TELEGRAM ALERT FUNCTION
+# ============================================================
+
+def send_telegram_alert(
+    frame,
+    driver_state,
+    confidence
+):
+
+    if not TELEGRAM_ENABLED:
+
+        return
+
+    try:
+
+        # Encode current frame as JPEG
+        success, encoded_image = cv2.imencode(
+            ".jpg",
+            frame
+        )
+
+        if not success:
+
+            print("ERROR: Could not encode snapshot.")
+
+            return
+
+        image_bytes = encoded_image.tobytes()
+
+        # Alert message
+        message = (
+            "🚨 DRIVER SAFETY ALERT\n\n"
+            f"Driver State: {driver_state}\n"
+            f"ML Confidence: {confidence:.0%}\n\n"
+            "Unsafe behavior detected by "
+            "the ML Driver Safety Monitor."
+        )
+
+        url = (
+            f"https://api.telegram.org/bot"
+            f"{BOT_TOKEN}/sendPhoto"
+        )
+
+        files = {
+            "photo": (
+                "driver_alert.jpg",
+                image_bytes,
+                "image/jpeg"
+            )
+        }
+
+        data = {
+            "chat_id": CHAT_ID,
+            "caption": message
+        }
+
+        response = requests.post(
+            url,
+            data=data,
+            files=files,
+            timeout=10
+        )
+
+        if response.ok:
+
+            print(
+                f"Telegram alert sent: {driver_state}"
+            )
+
+        else:
+
+            print(
+                "Telegram error:",
+                response.text
+            )
+
+    except Exception as e:
+
+        print(
+            "Telegram alert failed:",
+            e
+        )
+
+
+# ============================================================
 # CAMERA
 # ============================================================
 
@@ -182,6 +310,14 @@ print("       ML DRIVER SAFETY MONITOR")
 print("==============================================")
 print("Model: Random Forest")
 print("Features: 10")
+print("Telegram: " +
+      ("Enabled" if TELEGRAM_ENABLED else "Disabled"))
+print()
+print("Unsafe states:")
+print("- Drowsy")
+print("- Distracted")
+print("- Phone_Usage")
+print()
 print("Press Q to quit.")
 print("==============================================")
 
@@ -197,7 +333,14 @@ previous_pitch = None
 
 prediction_history = []
 
-prediction_confidence = 0.0
+# Current unsafe state being monitored
+unsafe_state = None
+
+# When the current unsafe state started
+unsafe_state_since = None
+
+# Last Telegram alert time
+last_alert_time = 0
 
 
 # ============================================================
@@ -209,18 +352,20 @@ while True:
     ret, frame = cap.read()
 
     if not ret:
+
         break
 
     h, w = frame.shape[:2]
 
 
     # ========================================================
-    # PHONE DETECTION USING YOLO
+    # PHONE DETECTION
     # ========================================================
 
     phone_detected = 0
 
     phone_confidence = 0.0
+
 
     yolo_results = yolo(
         frame,
@@ -278,7 +423,10 @@ while True:
                 cv2.putText(
                     frame,
                     f"PHONE {confidence:.0%}",
-                    (x1, max(20, y1 - 10)),
+                    (
+                        x1,
+                        max(20, y1 - 10)
+                    ),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
                     (0, 0, 255),
@@ -366,7 +514,7 @@ while True:
 
 
         # ====================================================
-        # EYE CLOSURE DURATION
+        # EYE CLOSURE
         # ====================================================
 
         if EAR < EAR_THRESHOLD:
@@ -409,9 +557,7 @@ while True:
             )
 
 
-            # =================================================
-            # ABSOLUTE HEAD ANGLES
-            # =================================================
+            # Absolute values
 
             abs_yaw = abs(yaw)
 
@@ -474,13 +620,14 @@ while True:
             features
         )[0]
 
+
         driver_state = str(
             prediction
         )
 
 
         # ====================================================
-        # PREDICTION CONFIDENCE
+        # ML CONFIDENCE
         # ====================================================
 
         if hasattr(
@@ -493,6 +640,7 @@ while True:
                     features
                 )
             )
+
 
             prediction_confidence = float(
                 np.max(
@@ -529,9 +677,82 @@ while True:
             )
 
 
+        # ====================================================
+        # SAFETY MONITORING
+        # ====================================================
+
+        unsafe_states = [
+            "Drowsy",
+            "Distracted",
+            "Phone_Usage"
+        ]
+
+
+        if driver_state in unsafe_states:
+
+            # New unsafe state
+            if unsafe_state != driver_state:
+
+                unsafe_state = driver_state
+
+                unsafe_state_since = time.time()
+
+
+            # Same unsafe state continues
+            else:
+
+                unsafe_duration = (
+                    time.time()
+                    -
+                    unsafe_state_since
+                )
+
+
+                # Check persistence
+                if unsafe_duration >= UNSAFE_DURATION:
+
+                    current_time = time.time()
+
+
+                    # Check alert cooldown
+                    if (
+                        current_time
+                        -
+                        last_alert_time
+                        >= ALERT_COOLDOWN
+                    ):
+
+                        # Send Telegram in background
+                        alert_frame = frame.copy()
+
+                        threading.Thread(
+                            target=send_telegram_alert,
+                            args=(
+                                alert_frame,
+                                driver_state,
+                                prediction_confidence
+                            ),
+                            daemon=True
+                        ).start()
+
+
+                        last_alert_time = current_time
+
+
+        else:
+
+            # Driver returned to safe state
+            unsafe_state = None
+
+            unsafe_state_since = None
+
+
     else:
 
-        # Reset face tracking
+        # ====================================================
+        # NO FACE
+        # ====================================================
+
         eyes_closed_since = None
 
         previous_yaw = None
@@ -540,15 +761,19 @@ while True:
 
         prediction_history.clear()
 
+        unsafe_state = None
+
+        unsafe_state_since = None
+
 
     # ========================================================
-    # DISPLAY INFORMATION PANEL
+    # DISPLAY PANEL
     # ========================================================
 
     cv2.rectangle(
         frame,
         (0, 0),
-        (w, 180),
+        (w, 185),
         (0, 0, 0),
         -1
     )
@@ -570,7 +795,7 @@ while True:
 
 
     # ========================================================
-    # ML CONFIDENCE
+    # CONFIDENCE
     # ========================================================
 
     cv2.putText(
@@ -585,7 +810,7 @@ while True:
 
 
     # ========================================================
-    # EYE INFORMATION
+    # EAR
     # ========================================================
 
     cv2.putText(
@@ -606,7 +831,7 @@ while True:
     cv2.putText(
         frame,
         f"Yaw: {yaw:.1f}  Pitch: {pitch:.1f}  Roll: {roll:.1f}",
-        (10, 110),
+        (10, 111),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.50,
         (255, 255, 255),
@@ -621,7 +846,7 @@ while True:
     cv2.putText(
         frame,
         f"Head Movement: {head_movement:.2f}",
-        (10, 137),
+        (10, 138),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.50,
         (255, 255, 255),
@@ -630,13 +855,13 @@ while True:
 
 
     # ========================================================
-    # PHONE INFORMATION
+    # PHONE
     # ========================================================
 
     cv2.putText(
         frame,
         f"Phone: {phone_detected}  Confidence: {phone_confidence:.2f}",
-        (10, 164),
+        (10, 165),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.50,
         (255, 255, 255),
@@ -645,7 +870,35 @@ while True:
 
 
     # ========================================================
-    # SHOW WINDOW
+    # MONITORING STATUS
+    # ========================================================
+
+    if unsafe_state is not None:
+
+        monitoring_time = (
+            time.time()
+            -
+            unsafe_state_since
+        )
+
+        status_text = (
+            f"Monitoring: {unsafe_state} "
+            f"({monitoring_time:.1f}s)"
+        )
+
+        cv2.putText(
+            frame,
+            status_text,
+            (10, 182),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 165, 255),
+            1
+        )
+
+
+    # ========================================================
+    # DISPLAY
     # ========================================================
 
     cv2.imshow(
@@ -659,6 +912,7 @@ while True:
     # ========================================================
 
     key = cv2.waitKey(1) & 0xFF
+
 
     if (
         key == ord("q")
